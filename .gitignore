@@ -4,7 +4,9 @@ __pycache__/
 *.db
 *.pth
 *.pt
+*.joblib
+models/trained/*
+!models/trained/.gitkeep
 .env
 logs/
 models/checkpoints/
-models/trained/*.pth

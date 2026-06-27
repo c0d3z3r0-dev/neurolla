@@ -1,12 +1,24 @@
+import os
 import MetaTrader5 as mt5
 import pandas as pd
 
 
 class MT5Connector:
     def __init__(self):
-        if not mt5.initialize(
-            path=r"C:\Program Files\MetaTrader 5\terminal64.exe"
-        ):
+        # MT5_TERMINAL_PATH is optional - if unset, mt5.initialize()
+        # auto-detects an already-running terminal, which works fine
+        # on any machine (and matches what live/trader.py already
+        # does). Only set it if you need to launch a specific
+        # installation explicitly.
+        terminal_path = os.environ.get("MT5_TERMINAL_PATH")
+
+        initialized = (
+            mt5.initialize(path=terminal_path)
+            if terminal_path
+            else mt5.initialize()
+        )
+
+        if not initialized:
             raise Exception(
                 f"Failed to connect to MetaTrader5: {mt5.last_error()}"
             )

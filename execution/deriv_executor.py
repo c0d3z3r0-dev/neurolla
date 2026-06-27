@@ -22,7 +22,7 @@ class DerivExecutor:
 
         if signal == "HOLD":
             print("No trade.")
-            return
+            return {"status": "hold"}
 
         contract_type = (
             "CALL"

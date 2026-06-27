@@ -13,7 +13,7 @@ class NeuroLLaTerminal:
             print("1. Show Accounts")
             print("2. Start Bot")
             print("3. Stop Bot")
-            print("4. Portfolio Status")
+            print("4. Bot Status")
             print("5. Exit")
 
             choice = input("> ")

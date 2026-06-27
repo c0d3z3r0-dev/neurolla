@@ -25,15 +25,22 @@ class EmailNotifier:
 
         msg.set_content(body)
 
-        with smtplib.SMTP(
-            "smtp.gmail.com",
-            587
-        ) as server:
-            server.starttls()
+        try:
+            with smtplib.SMTP(
+                "smtp.gmail.com",
+                587
+            ) as server:
+                server.starttls()
 
-            server.login(
-                self.email_address,
-                self.password
-            )
+                server.login(
+                    self.email_address,
+                    self.password
+                )
 
-            server.send_message(msg)
+                server.send_message(msg)
+
+            return True
+
+        except smtplib.SMTPException as error:
+            print(f"Email send failed: {error}")
+            return False

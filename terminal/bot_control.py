@@ -21,7 +21,8 @@ class BotControl:
             print("Bot stopped.")
 
     def status(self):
-        if self.process:
+        if self.process and self.process.poll() is None:
             print("Running")
         else:
+            self.process = None
             print("Stopped")
