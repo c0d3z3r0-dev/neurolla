@@ -1,3 +1,6 @@
+from core.config import TP_MULT, SL_MULT
+
+
 class BinanceAdapter:
     """
     Placeholder adapter. Binance execution is not yet implemented against
@@ -14,11 +17,11 @@ class BinanceAdapter:
         atr = signal_packet["atr"]
 
         if signal_packet["signal"] == "BUY":
-            sl = price - (atr * 1.5)
-            tp = price + (atr * 3.0)
+            sl = price - (atr * SL_MULT)
+            tp = price + (atr * TP_MULT)
         else:
-            sl = price + (atr * 1.5)
-            tp = price - (atr * 3.0)
+            sl = price + (atr * SL_MULT)
+            tp = price - (atr * TP_MULT)
 
         return {
             "status": "simulated",

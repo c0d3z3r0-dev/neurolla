@@ -249,12 +249,24 @@ class NeuroLLaCommander:
                 )
             )
 
+            if result.get("status") == "error":
+                print(
+                    f"{symbol} execution failed: "
+                    f"{result.get('detail', 'unknown error')}"
+                )
+
+                # The order was never actually placed - release the
+                # slot approve_trade reserved, or this symbol/cluster
+                # would stay blocked for a trade that never happened.
+                self.portfolio.release_trade(symbol)
+                continue
+
             self.journal.log_trade(
                 user_id=self.user_id,
                 signal_packet={
                     **signal_packet,
-                    "tp": result["tp"],
-                    "sl": result["sl"]
+                    "tp": result.get("tp"),
+                    "sl": result.get("sl")
                 }
             )
 

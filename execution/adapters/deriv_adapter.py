@@ -1,3 +1,6 @@
+from core.config import TP_MULT, SL_MULT
+
+
 class DerivAdapter:
     def __init__(self, credentials):
         self.api_token = credentials.get("api_token")
@@ -14,11 +17,11 @@ class DerivAdapter:
         atr = signal_packet["atr"]
 
         if signal_packet["signal"] == "BUY":
-            sl = price - (atr * 1.5)
-            tp = price + (atr * 3.0)
+            sl = price - (atr * SL_MULT)
+            tp = price + (atr * TP_MULT)
         else:
-            sl = price + (atr * 1.5)
-            tp = price - (atr * 3.0)
+            sl = price + (atr * SL_MULT)
+            tp = price - (atr * TP_MULT)
 
         return {
             "status": "simulated",
