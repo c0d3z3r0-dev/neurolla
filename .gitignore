@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.pth
+*.pt
+.env
+logs/
+models/checkpoints/
+models/trained/*.pth
