@@ -26,4 +26,8 @@ class PairClusters:
             if symbol in pairs:
                 return cluster
 
-        return None
+        # Symbols outside the known clusters get their own cluster keyed
+        # by symbol, instead of all sharing the same "unclustered" bucket
+        # (which previously meant the first unlisted symbol traded would
+        # block every other unlisted symbol from ever trading).
+        return f"UNCLUSTERED_{symbol}"

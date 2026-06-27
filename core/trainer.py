@@ -1,8 +1,15 @@
 import torch
 import os
+from core.config import CHECKPOINT_DIR, CHECKPOINT_PATH
 
 
 class Trainer:
+    """
+    Wraps checkpoint save/resume so train.py can stop and restart
+    without losing progress, and so the best-validation-loss epoch is
+    never overwritten by a later, worse epoch.
+    """
+
     def __init__(
         self,
         model,
@@ -16,10 +23,11 @@ class Trainer:
     def save_checkpoint(
         self,
         epoch,
-        loss
+        loss,
+        path=CHECKPOINT_PATH
     ):
         os.makedirs(
-            "models/checkpoints",
+            CHECKPOINT_DIR,
             exist_ok=True
         )
 
@@ -30,14 +38,12 @@ class Trainer:
                 "optimizer_state": self.optimizer.state_dict(),
                 "loss": loss
             },
-            "models/checkpoints/latest.pth"
+            path
         )
 
-    def load_checkpoint(self):
-        path = "models/checkpoints/latest.pth"
-
+    def load_checkpoint(self, path=CHECKPOINT_PATH):
         if os.path.exists(path):
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path, map_location="cpu")
 
             self.model.load_state_dict(
                 checkpoint["model_state"]

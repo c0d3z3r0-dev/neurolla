@@ -1,5 +1,6 @@
 from server.database import SessionLocal
 from server.models import Trade
+from datetime import datetime, timezone
 
 
 class TradeJournal:
@@ -29,7 +30,11 @@ class TradeJournal:
             ),
             confidence=signal_packet[
                 "confidence"
-            ]
+            ],
+            volume=signal_packet.get(
+                "volume",
+                0.0
+            )
         )
 
         self.db.add(trade)
@@ -49,5 +54,9 @@ class TradeJournal:
         if trade:
             trade.pnl = pnl
             trade.status = "CLOSED"
+            trade.closed_at = datetime.now(timezone.utc)
 
             self.db.commit()
+
+    def close(self):
+        self.db.close()

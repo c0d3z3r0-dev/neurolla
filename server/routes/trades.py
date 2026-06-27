@@ -1,46 +1,40 @@
-from fastapi import APIRouter
-from server.database import SessionLocal
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from server.database import get_db
 from server.models import Trade
+from server.auth import require_user
 
 router = APIRouter()
 
 
-@router.get("/trades/{user_id}")
-def get_trades(user_id: int):
-    db = SessionLocal()
-
-    trades = db.query(
-        Trade
-    ).filter(
+@router.get("/trades")
+def get_trades(
+    user_id: int = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    return db.query(Trade).filter(
         Trade.user_id == user_id
     ).all()
 
-    return trades
 
-
-@router.get("/trades/open/{user_id}")
-def open_trades(user_id: int):
-    db = SessionLocal()
-
-    trades = db.query(
-        Trade
-    ).filter(
+@router.get("/trades/open")
+def open_trades(
+    user_id: int = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    return db.query(Trade).filter(
         Trade.user_id == user_id,
         Trade.status == "OPEN"
     ).all()
 
-    return trades
 
-
-@router.get("/trades/closed/{user_id}")
-def closed_trades(user_id: int):
-    db = SessionLocal()
-
-    trades = db.query(
-        Trade
-    ).filter(
+@router.get("/trades/closed")
+def closed_trades(
+    user_id: int = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    return db.query(Trade).filter(
         Trade.user_id == user_id,
         Trade.status == "CLOSED"
     ).all()
-
-    return trades

@@ -16,3 +16,17 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
+
+def get_db():
+    """
+    FastAPI dependency: yields a session and guarantees it's closed
+    after the request finishes, even if the handler raises. Routes
+    declare `db: Session = Depends(get_db)` instead of calling
+    SessionLocal() directly and leaking the connection.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

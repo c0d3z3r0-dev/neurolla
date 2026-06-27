@@ -1,24 +1,19 @@
-from fastapi import APIRouter
-from server.auth import verify_google_token
-from server.database import SessionLocal
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from server.auth import verify_google_token, issue_session_token
+from server.database import get_db
 from server.models import User
 
 router = APIRouter()
 
 
 @router.post("/auth/google")
-def google_auth(payload: dict):
-    db = SessionLocal()
-
-    decoded = verify_google_token(
-        payload["id_token"]
-    )
+def google_auth(payload: dict, db: Session = Depends(get_db)):
+    decoded = verify_google_token(payload["id_token"])
 
     email = decoded["email"]
-    name = decoded.get(
-        "name",
-        "Unknown"
-    )
+    name = decoded.get("name", "Unknown")
     uid = decoded["uid"]
 
     existing = db.query(User).filter(
@@ -26,9 +21,11 @@ def google_auth(payload: dict):
     ).first()
 
     if existing:
+        token = issue_session_token(existing.id)
         return {
             "status": "login successful",
-            "user_id": existing.id
+            "user_id": existing.id,
+            "session_token": token
         }
 
     user = User(
@@ -41,7 +38,10 @@ def google_auth(payload: dict):
     db.commit()
     db.refresh(user)
 
+    token = issue_session_token(user.id)
+
     return {
         "status": "account created",
-        "user_id": user.id
+        "user_id": user.id,
+        "session_token": token
     }

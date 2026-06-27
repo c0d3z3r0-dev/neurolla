@@ -1,14 +1,33 @@
 import torch
 import torch.nn as nn
+from core.config import (
+    NUM_FEATURES,
+    CONV_OUT,
+    ATTENTION_HEADS,
+    DROPOUT
+)
 
 
 class NeuroLLaCore(nn.Module):
+    """
+    Single, canonical NeuroLLa model: a temporal Conv1d layer extracts
+    short local patterns from the raw feature sequence, multi-head
+    self-attention lets every timestep weigh every other timestep, and
+    a feedforward block with residual connections refines the result
+    before mean-pooling into a 3-class (SELL/HOLD/BUY) classification.
+
+    All hyperparameter defaults come from core.config, so changing the
+    network's width/feature count/dropout in one place (config.py)
+    changes it everywhere this class is constructed.
+    """
+
     def __init__(
         self,
-        input_dim=29,
-        embed_dim=128,
-        num_heads=4,
-        num_classes=3
+        input_dim=NUM_FEATURES,
+        embed_dim=CONV_OUT * 2,
+        num_heads=ATTENTION_HEADS,
+        num_classes=3,
+        dropout=DROPOUT
     ):
         super().__init__()
 
@@ -22,7 +41,8 @@ class NeuroLLaCore(nn.Module):
         self.attention = nn.MultiheadAttention(
             embed_dim=embed_dim,
             num_heads=num_heads,
-            batch_first=True
+            batch_first=True,
+            dropout=dropout
         )
 
         self.layer_norm1 = nn.LayerNorm(embed_dim)
@@ -31,7 +51,7 @@ class NeuroLLaCore(nn.Module):
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, embed_dim * 2),
             nn.GELU(),
-            nn.Dropout(0.35),
+            nn.Dropout(dropout),
             nn.Linear(embed_dim * 2, embed_dim)
         )
 
@@ -41,6 +61,8 @@ class NeuroLLaCore(nn.Module):
         )
 
     def forward(self, x):
+        # x arrives as (batch, sequence_length, num_features); Conv1d
+        # expects channels first, so permute to (batch, num_features, seq).
         x = x.permute(0, 2, 1)
 
         cnn_features = self.temporal_cnn(x)

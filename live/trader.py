@@ -1,36 +1,36 @@
-import torch
-import torch.nn.functional as F
+import pandas as pd
 import MetaTrader5 as mt5
 from datetime import datetime, timedelta
 
-from networks.hybrid_model import NeuroLLaCore
 from core.features import build_features
-from core.evaluator import build_sequences
+from core.inference import ModelInference
 from core.risk import fractional_kelly
 from core.journal import TradeJournal
+from core.config import TP_MULT, SL_MULT, MIN_CONFIDENCE, MAX_DAILY_DRAWDOWN
 
 
 class NeuroLLaTrader:
-    def __init__(self):
+    """
+    Single-symbol MT5 live trader driven directly by NeuroLLaCore.
+    SL/TP are ATR-based using the same multipliers the model was
+    trained against (core.config.TP_MULT / SL_MULT), so what the model
+    was trained to predict matches what actually gets executed - fixed
+    pip offsets unrelated to the labeling scheme would otherwise mean
+    the model's "win" doesn't correspond to the trade's real outcome.
+    """
+
+    def __init__(self, user_id=1):
         if not mt5.initialize():
             raise Exception(
                 f"MT5 init failed: {mt5.last_error()}"
             )
 
+        self.user_id = user_id
         self.journal = TradeJournal()
-
-        self.model = NeuroLLaCore()
-
-        self.model.load_state_dict(
-            torch.load(
-                "models/trained/neurolla.pth"
-            )
-        )
-
-        self.model.eval()
+        self.inference = ModelInference()
 
         self.daily_start_balance = self.get_balance()
-        self.max_drawdown = 0.05
+        self.max_drawdown = MAX_DAILY_DRAWDOWN
         self.last_trade_time = None
         self.cooldown_minutes = 15
 
@@ -82,8 +82,6 @@ class NeuroLLaTrader:
             bars
         )
 
-        import pandas as pd
-
         df = pd.DataFrame(rates)
 
         df["time"] = pd.to_datetime(
@@ -106,39 +104,15 @@ class NeuroLLaTrader:
 
     def infer_signal(self, symbol):
         df = self.fetch_market_data(symbol)
-
         df = build_features(df)
 
-        dummy_labels = [1] * len(df)
+        label_index, label_name, confidence = self.inference.predict(df)
 
-        X, _ = build_sequences(
-            df,
-            dummy_labels
-        )
+        # Return the latest ATR too, since place_trade needs it to
+        # size SL/TP consistently with how the model was trained.
+        latest_atr = df["atr"].iloc[-1]
 
-        latest = torch.tensor(
-            X[-1:],
-            dtype=torch.float32
-        )
-
-        with torch.no_grad():
-            logits = self.model(latest)
-
-            probs = F.softmax(
-                logits,
-                dim=1
-            )
-
-        prediction = torch.argmax(
-            probs,
-            dim=1
-        ).item()
-
-        confidence = torch.max(
-            probs
-        ).item()
-
-        return prediction, confidence
+        return label_index, confidence, latest_atr
 
     def place_trade(self, symbol="EURUSD"):
         if not self.check_drawdown():
@@ -153,11 +127,9 @@ class NeuroLLaTrader:
             print("Spread too high.")
             return
 
-        prediction, confidence = self.infer_signal(
-            symbol
-        )
+        prediction, confidence, atr = self.infer_signal(symbol)
 
-        if confidence < 0.68:
+        if confidence < MIN_CONFIDENCE:
             print("Confidence too low.")
             return
 
@@ -166,14 +138,14 @@ class NeuroLLaTrader:
         if prediction == 0:
             order_type = mt5.ORDER_TYPE_SELL
             price = tick.bid
-            sl = price + 0.0010
-            tp = price - 0.0020
+            sl = price + (atr * SL_MULT)
+            tp = price - (atr * TP_MULT)
 
         elif prediction == 2:
             order_type = mt5.ORDER_TYPE_BUY
             price = tick.ask
-            sl = price - 0.0010
-            tp = price + 0.0020
+            sl = price - (atr * SL_MULT)
+            tp = price + (atr * TP_MULT)
 
         else:
             print("HOLD signal.")
@@ -211,14 +183,17 @@ class NeuroLLaTrader:
 
         direction = "BUY" if prediction == 2 else "SELL"
 
-        self.journal.log(
-           symbol=symbol,
-           direction=direction,
-           confidence=confidence,
-           entry=price,
-           sl=sl,
-           tp=tp,
-           volume=volume
+        self.journal.log_trade(
+            self.user_id,
+            {
+                "symbol": symbol,
+                "signal": direction,
+                "confidence": confidence,
+                "entry": price,
+                "sl": sl,
+                "tp": tp,
+                "volume": volume
+            }
         )
 
         self.last_trade_time = datetime.now()
@@ -226,4 +201,5 @@ class NeuroLLaTrader:
         print("Trade placed:", result)
 
     def shutdown(self):
+        self.journal.close()
         mt5.shutdown()

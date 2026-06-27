@@ -1,67 +1,36 @@
-import torch
-import torch.nn.functional as F
-import pandas as pd
-
-from networks.hybrid_model import NeuroLLaCore
 from core.features import build_features
-from core.evaluator import build_sequences
+from core.inference import ModelInference
 from core.risk import fractional_kelly
+from core.config import TP_MULT, SL_MULT
 
 
 class SignalEngine:
+    """
+    Produces a complete signal_packet (signal, confidence, entry,
+    sl, tp, risk) from raw market data - used by execution/deriv_executor.py
+    which expects signal_packet["risk"] to size the trade.
+    """
+
     def __init__(self):
-        self.model = NeuroLLaCore()
-
-        self.model.load_state_dict(
-            torch.load(
-                "models/trained/neurolla.pth"
-            )
-        )
-
-        self.model.eval()
+        self.inference = ModelInference()
 
     def generate(self, market_df):
         df = build_features(market_df)
 
-        dummy_labels = [1] * len(df)
-
-        X, _ = build_sequences(
-            df,
-            dummy_labels
-        )
-
-        latest = torch.tensor(
-            X[-1:],
-            dtype=torch.float32
-        )
-
-        with torch.no_grad():
-            logits = self.model(latest)
-            probs = F.softmax(
-                logits,
-                dim=1
-            )
-
-        pred = torch.argmax(
-            probs,
-            dim=1
-        ).item()
-
-        confidence = torch.max(
-            probs
-        ).item()
+        label_index, label_name, confidence = self.inference.predict(df)
 
         price = df["close"].iloc[-1]
+        atr = df["atr"].iloc[-1]
 
-        if pred == 2:
+        if label_index == 2:
             signal = "BUY"
-            sl = price - 0.0010
-            tp = price + 0.0020
+            sl = price - (atr * SL_MULT)
+            tp = price + (atr * TP_MULT)
 
-        elif pred == 0:
+        elif label_index == 0:
             signal = "SELL"
-            sl = price + 0.0010
-            tp = price - 0.0020
+            sl = price + (atr * SL_MULT)
+            tp = price - (atr * TP_MULT)
 
         else:
             signal = "HOLD"

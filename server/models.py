@@ -3,8 +3,10 @@ from sqlalchemy import (
     Integer,
     String,
     Float,
-    Boolean
+    Boolean,
+    DateTime
 )
+from datetime import datetime, timezone
 
 from server.database import Base
 
@@ -123,6 +125,11 @@ class Trade(Base):
         Float
     )
 
+    volume = Column(
+        Float,
+        default=0.0
+    )
+
     pnl = Column(
         Float,
         default=0
@@ -131,6 +138,16 @@ class Trade(Base):
     status = Column(
         String,
         default="OPEN"
+    )
+
+    opened_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    closed_at = Column(
+        DateTime,
+        nullable=True
     )
 
 class RiskControl(Base):

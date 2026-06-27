@@ -1,34 +1,49 @@
 import numpy as np
+from core.config import TP_MULT, SL_MULT, LABEL_HORIZON
 
 
 def triple_barrier_labels(
     close_prices,
     atr_values,
-    tp_mult=2.0,
-    sl_mult=1.0,
-    horizon=48
+    tp_mult=TP_MULT,
+    sl_mult=SL_MULT,
+    horizon=LABEL_HORIZON
 ):
-    labels = []
+    """
+    Single, shared triple-barrier labeling function.
+    Label 2 = take-profit hit first (BUY signal in hindsight)
+    Label 0 = stop-loss hit first  (SELL signal in hindsight)
+    Label 1 = neither hit within horizon (HOLD)
 
-    for i in range(len(close_prices) - horizon):
-        start_price = close_prices[i]
+    The lookahead window deliberately starts at i+1, not i, so the
+    entry bar itself is never compared against its own barriers.
+    The final `horizon` rows have no full lookahead window and are
+    labeled HOLD (1) rather than silently dropped, so labels stay
+    aligned 1:1 with the input arrays.
+    """
+    n = len(close_prices)
+    labels = np.ones(n, dtype=np.int64)
 
-        upper = start_price + (atr_values[i] * tp_mult)
-        lower = start_price - (atr_values[i] * sl_mult)
+    for i in range(n - horizon):
+        entry = close_prices[i]
+        atr = atr_values[i]
 
-        future_window = close_prices[i:i+horizon]
+        if atr <= 0 or np.isnan(atr):
+            continue
 
-        label = 1
+        upper = entry + (atr * tp_mult)
+        lower = entry - (atr * sl_mult)
 
-        for price in future_window:
-            if price >= upper:
-                label = 2
-                break
+        future_window = close_prices[i + 1:i + 1 + horizon]
 
-            elif price <= lower:
-                label = 0
-                break
+        hit_tp = np.any(future_window >= upper)
+        hit_sl = np.any(future_window <= lower)
 
-        labels.append(label)
+        if hit_tp and not hit_sl:
+            labels[i] = 2
+        elif hit_sl and not hit_tp:
+            labels[i] = 0
+        else:
+            labels[i] = 1
 
-    return np.array(labels)
+    return labels

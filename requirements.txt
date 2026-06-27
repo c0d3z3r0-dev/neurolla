@@ -9,3 +9,12 @@ ta
 MetaTrader5
 joblib
 tqdm
+fastapi
+uvicorn
+sqlalchemy
+firebase-admin
+pyjwt
+requests
+websocket-client
+cryptography
+python-dotenv

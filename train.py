@@ -1,310 +1,224 @@
-import pandas as pd
+import os
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 
-from core.features import build_features
-from core.evaluator import build_sequences
-from backtesting.monte_carlo import (
-    MonteCarloEngine
+from core.config import (
+    MODEL_DIR,
+    MODEL_SAVE_PATH,
+    SCALER_SAVE_PATH,
+    SEQUENCE_LENGTH,
+    BATCH_SIZE,
+    EPOCHS,
+    LEARNING_RATE,
+    VALIDATION_SPLIT,
+    TEST_SPLIT,
+    EARLY_STOPPING_PATIENCE,
+    GRADIENT_CLIP_NORM,
+    DEVICE
 )
+from core.features import build_features
+from core.labels import triple_barrier_labels
+from core.evaluator import build_sequences, save_scaler
+from core.dataset import MarketDataset
+from core.trainer import Trainer
+from networks.hybrid_model import NeuroLLaCore
+from backtesting.monte_carlo import MonteCarloEngine
+
+DATA_PATH = "data/raw/market.csv"
 
 
-class NeuroLLaModel(nn.Module):
-    def __init__(
-        self,
-        input_size=6,
-        hidden_size=64,
-        output_size=3
-    ):
-        super().__init__()
+def chronological_split(df, val_split=VALIDATION_SPLIT, test_split=TEST_SPLIT):
+    """
+    Splits a time-ordered dataframe into train/val/test, in that
+    chronological order. This must never be a random shuffle split -
+    a model that has seen future bars during training would report
+    unrealistically good validation/test accuracy (lookahead bias).
+    """
+    n = len(df)
+    test_start = int(n * (1 - test_split))
+    val_start = int(test_start * (1 - val_split))
 
-        self.lstm = nn.LSTM(
-            input_size,
-            hidden_size,
-            batch_first=True
-        )
+    train_df = df.iloc[:val_start].reset_index(drop=True)
+    val_df = df.iloc[val_start:test_start].reset_index(drop=True)
+    test_df = df.iloc[test_start:].reset_index(drop=True)
 
-        self.fc = nn.Linear(
-            hidden_size,
-            output_size
-        )
-
-    def forward(
-        self,
-        x
-    ):
-        out, _ = self.lstm(x)
-
-        out = self.fc(
-            out[:, -1, :]
-        )
-
-        return out
+    return train_df, val_df, test_df
 
 
-def triple_barrier_labels(
-    df,
-    horizon=20,
-    tp_mult=2.0,
-    sl_mult=1.0
-):
-    labels = []
-
-    closes = df["close"].values
-    atr_values = df["atr"].values
-
-    for i in range(len(df)):
-        if i + horizon >= len(df):
-            labels.append(1)
-            continue
-
-        entry = closes[i]
-        atr = atr_values[i]
-
-        tp = entry + (
-            atr * tp_mult
-        )
-
-        sl = entry - (
-            atr * sl_mult
-        )
-
-        future = closes[
-            i+1:i+horizon+1
-        ]
-
-        hit_tp = np.any(
-            future >= tp
-        )
-
-        hit_sl = np.any(
-            future <= sl
-        )
-
-        if hit_tp and not hit_sl:
-            labels.append(2)
-
-        elif hit_sl and not hit_tp:
-            labels.append(0)
-
-        else:
-            labels.append(1)
-
-    return np.array(labels)
+def compute_class_weights(labels, num_classes=3):
+    """
+    Triple-barrier labels are rarely balanced (HOLD usually dominates),
+    so an unweighted CrossEntropyLoss would let the model get a
+    deceptively low loss by mostly predicting HOLD. Weighting inversely
+    by class frequency counteracts that.
+    """
+    counts = np.bincount(labels, minlength=num_classes).astype(np.float64)
+    counts[counts == 0] = 1  # avoid divide-by-zero for an absent class
+    weights = counts.sum() / (num_classes * counts)
+    return torch.tensor(weights, dtype=torch.float32)
 
 
-def walk_forward_split(
-    X,
-    y,
-    train_ratio=0.8
-):
-    split = int(
-        len(X) * train_ratio
-    )
+def run_epoch(model, loader, criterion, optimizer=None, device=DEVICE):
+    """
+    One pass over `loader`. Pass optimizer=None for validation/test so
+    no gradient step is taken and dropout/batchnorm behave in eval mode.
+    """
+    is_training = optimizer is not None
+    model.train() if is_training else model.eval()
 
-    X_train = X[:split]
-    y_train = y[:split]
+    total_loss = 0.0
+    correct = 0
+    total = 0
 
-    X_test = X[split:]
-    y_test = y[split:]
+    context = torch.enable_grad() if is_training else torch.no_grad()
 
-    return (
-        X_train,
-        y_train,
-        X_test,
-        y_test
-    )
+    with context:
+        for X_batch, y_batch in loader:
+            X_batch = X_batch.to(device)
+            y_batch = y_batch.to(device)
 
+            if is_training:
+                optimizer.zero_grad()
 
-def train_model(
-    model,
-    X_train,
-    y_train,
-    epochs=15
-):
-    criterion = nn.CrossEntropyLoss()
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
 
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=0.001
-    )
+            if is_training:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), GRADIENT_CLIP_NORM)
+                optimizer.step()
 
-    X_train = torch.tensor(
-        X_train,
-        dtype=torch.float32
-    )
+            total_loss += loss.item() * X_batch.size(0)
+            predictions = torch.argmax(outputs, dim=1)
+            correct += (predictions == y_batch).sum().item()
+            total += X_batch.size(0)
 
-    y_train = torch.tensor(
-        y_train,
-        dtype=torch.long
-    )
-
-    for epoch in range(epochs):
-        optimizer.zero_grad()
-
-        outputs = model(
-            X_train
-        )
-
-        loss = criterion(
-            outputs,
-            y_train
-        )
-
-        loss.backward()
-        optimizer.step()
-
-        print(
-            f"Epoch {epoch+1}/{epochs} "
-            f"Loss={loss.item():.4f}"
-        )
+    return total_loss / total, correct / total
 
 
-def evaluate_model(
-    model,
-    X_test,
-    y_test
-):
-    X_test = torch.tensor(
-        X_test,
-        dtype=torch.float32
-    )
-
-    outputs = model(
-        X_test
-    )
-
-    predictions = torch.argmax(
-        outputs,
-        dim=1
-    ).numpy()
-
-    accuracy = np.mean(
-        predictions == y_test
-    )
-
-    print(
-        f"Accuracy: {accuracy:.4f}"
-    )
-
-    return predictions
-
-
-def monte_carlo_validation(
-    predictions,
-    y_test
-):
+def monte_carlo_validation(predictions, y_test):
     trade_results = []
 
-    for pred, actual in zip(
-        predictions,
-        y_test
-    ):
+    for pred, actual in zip(predictions, y_test):
         if pred == actual:
-            trade_results.append(
-                10
-            )
+            trade_results.append(10)
         else:
-            trade_results.append(
-                -10
-            )
+            trade_results.append(-10)
 
     mc = MonteCarloEngine()
+    results = mc.simulate(trade_results)
 
-    results = mc.simulate(
-        trade_results
-    )
-
-    print(
-        "Monte Carlo Results:"
-    )
-
+    print("Monte Carlo Results:")
     print(results)
 
 
 def main():
-    print(
-        "Loading market data..."
-    )
+    print("Loading market data...")
+    df = pd.read_csv(DATA_PATH)
+    df["time"] = pd.to_datetime(df["time"])
 
-    df = pd.read_csv(
-        "data/market_data.csv"
-    )
-
-    print(
-        "Building features..."
-    )
-
+    print("Building features...")
     df = build_features(df)
 
-    print(
-        "Generating labels..."
+    print("Chronological train/val/test split...")
+    train_df, val_df, test_df = chronological_split(df)
+    print(f"  train={len(train_df)} val={len(val_df)} test={len(test_df)}")
+
+    print("Generating labels...")
+    train_labels = triple_barrier_labels(train_df["close"].values, train_df["atr"].values)
+    val_labels = triple_barrier_labels(val_df["close"].values, val_df["atr"].values)
+    test_labels = triple_barrier_labels(test_df["close"].values, test_df["atr"].values)
+
+    print("Building sequences (fitting scaler on train split only)...")
+    X_train, y_train, scaler = build_sequences(
+        train_df, train_labels, sequence_length=SEQUENCE_LENGTH, fit_scaler=True
+    )
+    X_val, y_val, _ = build_sequences(
+        val_df, val_labels, sequence_length=SEQUENCE_LENGTH, scaler=scaler
+    )
+    X_test, y_test, _ = build_sequences(
+        test_df, test_labels, sequence_length=SEQUENCE_LENGTH, scaler=scaler
     )
 
-    labels = triple_barrier_labels(
-        df
+    if len(X_train) == 0 or len(X_val) == 0:
+        raise RuntimeError(
+            "Not enough rows to build even one sequence in every split. "
+            "Either lower SEQUENCE_LENGTH in core/config.py or provide more data."
+        )
+
+    print(f"  X_train={X_train.shape} X_val={X_val.shape} X_test={X_test.shape}")
+
+    train_loader = DataLoader(
+        MarketDataset(X_train, y_train), batch_size=BATCH_SIZE, shuffle=True
+    )
+    val_loader = DataLoader(
+        MarketDataset(X_val, y_val), batch_size=BATCH_SIZE, shuffle=False
+    )
+    test_loader = DataLoader(
+        MarketDataset(X_test, y_test), batch_size=BATCH_SIZE, shuffle=False
     )
 
-    print(
-        "Building sequences..."
-    )
+    print("Building model...")
+    model = NeuroLLaCore().to(DEVICE)
 
-    X, y = build_sequences(
-        df,
-        labels
-    )
+    class_weights = compute_class_weights(y_train).to(DEVICE)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    trainer = Trainer(model, optimizer, criterion)
 
-    print(
-        "Walk-forward split..."
-    )
+    print("Training...")
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
 
-    (
-        X_train,
-        y_train,
-        X_test,
-        y_test
-    ) = walk_forward_split(
-        X,
-        y
-    )
+    for epoch in range(EPOCHS):
+        train_loss, train_acc = run_epoch(model, train_loader, criterion, optimizer)
+        val_loss, val_acc = run_epoch(model, val_loader, criterion, optimizer=None)
 
-    print(
-        "Training model..."
-    )
+        print(
+            f"Epoch {epoch + 1}/{EPOCHS} | "
+            f"train_loss={train_loss:.4f} train_acc={train_acc:.4f} | "
+            f"val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
+        )
 
-    model = NeuroLLaModel()
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
+            trainer.save_checkpoint(epoch, val_loss)
+        else:
+            epochs_without_improvement += 1
 
-    train_model(
-        model,
-        X_train,
-        y_train
-    )
+            if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
+                print(f"No val improvement for {EARLY_STOPPING_PATIENCE} epochs, stopping early.")
+                break
 
-    print(
-        "Evaluating..."
-    )
+    print("Loading best checkpoint (by validation loss) for final evaluation...")
+    trainer.load_checkpoint()
 
-    predictions = evaluate_model(
-        model,
-        X_test,
-        y_test
-    )
+    print("Evaluating on held-out test split...")
+    test_loss, test_acc = run_epoch(model, test_loader, criterion, optimizer=None)
+    print(f"Test loss={test_loss:.4f} Test accuracy={test_acc:.4f}")
 
-    monte_carlo_validation(
-        predictions,
-        y_test
-    )
+    model.eval()
+    all_predictions = []
+    with torch.no_grad():
+        for X_batch, _ in test_loader:
+            outputs = model(X_batch.to(DEVICE))
+            preds = torch.argmax(outputs, dim=1).cpu().numpy()
+            all_predictions.extend(preds)
 
-    torch.save(
-        model.state_dict(),
-        "neurolla.pt"
-    )
+    monte_carlo_validation(all_predictions, y_test)
 
-    print(
-        "Model saved."
-    )
+    print("Saving final model and scaler...")
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_SAVE_PATH)
+    save_scaler(scaler, SCALER_SAVE_PATH)
+
+    print(f"Model saved to {MODEL_SAVE_PATH}")
+    print(f"Scaler saved to {SCALER_SAVE_PATH}")
 
 
 if __name__ == "__main__":

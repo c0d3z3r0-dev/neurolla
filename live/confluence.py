@@ -1,24 +1,19 @@
 import MetaTrader5 as mt5
-import torch
-import torch.nn.functional as F
 import pandas as pd
 
-from networks.hybrid_model import NeuroLLaCore
 from core.features import build_features
-from core.evaluator import build_sequences
+from core.inference import ModelInference
 
 
 class MultiTimeframeConfluence:
+    """
+    Runs the same model across M5/M15/H1 and checks whether they all
+    agree on direction, as a confirmation gate before commander.py
+    acts on the primary (rule-based) strategy signal.
+    """
+
     def __init__(self):
-        self.model = NeuroLLaCore()
-
-        self.model.load_state_dict(
-            torch.load(
-                "models/trained/neurolla.pth"
-            )
-        )
-
-        self.model.eval()
+        self.inference = ModelInference()
 
     def fetch_tf(
         self,
@@ -54,43 +49,12 @@ class MultiTimeframeConfluence:
         return df
 
     def infer(self, symbol, timeframe):
-        df = self.fetch_tf(
-            symbol,
-            timeframe
-        )
-
+        df = self.fetch_tf(symbol, timeframe)
         df = build_features(df)
 
-        dummy_labels = [1] * len(df)
+        label_index, label_name, confidence = self.inference.predict(df)
 
-        X, _ = build_sequences(
-            df,
-            dummy_labels
-        )
-
-        latest = torch.tensor(
-            X[-1:],
-            dtype=torch.float32
-        )
-
-        with torch.no_grad():
-            logits = self.model(latest)
-
-            probs = F.softmax(
-                logits,
-                dim=1
-            )
-
-        prediction = torch.argmax(
-            probs,
-            dim=1
-        ).item()
-
-        confidence = torch.max(
-            probs
-        ).item()
-
-        return prediction, confidence
+        return label_index, confidence
 
     def confirm(self, symbol):
         tf_map = {

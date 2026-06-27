@@ -27,7 +27,7 @@ class PortfolioManager:
         )
 
         if cluster in self.active_clusters:
-            return False, "Cluster already active"
+            return False, 0
 
         capital = self.allocator.allocate(
             confidence
@@ -43,3 +43,12 @@ class PortfolioManager:
         )
 
         return True, capital
+
+    def release_trade(self, symbol):
+        """
+        Must be called when a position on `symbol` closes, or its
+        cluster stays blocked and its exposure stays counted forever.
+        """
+        cluster = self.clusters.get_cluster(symbol)
+        self.active_clusters.discard(cluster)
+        self.exposure.remove_position(symbol)
