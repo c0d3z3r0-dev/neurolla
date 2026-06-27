@@ -1,7 +1,8 @@
 from live.trader import NeuroLLaTrader
-from live.scanner import MultiPairScanner
+from live.scanner import MultiPairScanner, DEFAULT_WATCHLIST
 from live.confluence import MultiTimeframeConfluence
 from live.news_filter import NewsFilter
+from scheduler.bot_runner import fetch_watchlist_data
 
 
 def main():
@@ -11,9 +12,15 @@ def main():
         print("News blackout active.")
         return
 
+    market_data = fetch_watchlist_data("mt5", DEFAULT_WATCHLIST)
+
+    if not market_data:
+        print("No market data available.")
+        return
+
     scanner = MultiPairScanner()
 
-    ranked = scanner.scan()
+    ranked = scanner.scan(market_data)
 
     if len(ranked) == 0:
         print("No signals.")
@@ -33,7 +40,7 @@ def main():
         )
         return
 
-    trader = scanner.trader
+    trader = NeuroLLaTrader()
 
     trader.place_trade(
         top["symbol"]

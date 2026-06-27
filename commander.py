@@ -1,3 +1,7 @@
+import os
+
+from core.config import MIN_CONFIDENCE
+
 from live.news_filter import NewsFilter
 from live.confluence import (
     MultiTimeframeConfluence
@@ -21,6 +25,10 @@ from adaptive_train import (
 
 from execution.broker_router import (
     BrokerRouter
+)
+
+from live.position_monitor import (
+    PositionMonitor
 )
 
 from core.journal import (
@@ -58,11 +66,11 @@ class NeuroLLaCommander:
         )
 
         self.analytics = (
-            NeuroLLaAnalytics()
+            NeuroLLaAnalytics(user_id=user_id)
         )
 
         self.adaptive = (
-            AdaptiveTrainer()
+            AdaptiveTrainer(user_id=None)
         )
 
         self.router = BrokerRouter(
@@ -78,6 +86,10 @@ class NeuroLLaCommander:
 
         self.journal = TradeJournal()
 
+        self.position_monitor = PositionMonitor(
+            self.portfolio
+        )
+
         self.quality = TradeQuality()
 
         self.risk_guard = RiskGuard(
@@ -87,17 +99,19 @@ class NeuroLLaCommander:
         self.notifier = (
             NeuroLLaNotifier(
                 telegram_config={
-                    "bot_token":
-                    "YOUR_TELEGRAM_BOT_TOKEN",
-                    "chat_id":
-                    "YOUR_CHAT_ID"
+                    "bot_token": os.environ.get(
+                        "TELEGRAM_BOT_TOKEN", ""
+                    ),
+                    "chat_id": os.environ.get(
+                        "TELEGRAM_CHAT_ID", ""
+                    )
                 }
             )
         )
 
     def cycle(
         self,
-        df
+        market_data
     ):
         print(
             "=== NeuroLLa Commander ==="
@@ -121,22 +135,23 @@ class NeuroLLaCommander:
 
             return
 
-        ranked = self.scanner.scan(df)
+        # Reconcile any trades that closed at the broker since the
+        # last cycle, before deciding whether new symbols/clusters are
+        # free to trade - otherwise a closed position's cluster would
+        # stay blocked forever.
+        self.position_monitor.reconcile()
+
+        # Accept either a single dataframe (legacy single-symbol call)
+        # or a {symbol: df} dict for genuine multi-pair scanning.
+        if not isinstance(market_data, dict):
+            symbol = self.scanner.watchlist[0]
+            market_data = {symbol: market_data}
+
+        ranked = self.scanner.scan(market_data)
 
         if len(ranked) == 0:
             print(
                 "No opportunities found."
-            )
-
-            return
-
-        quality_score = (
-            self.quality.score(df)
-        )
-
-        if quality_score < 60:
-            print(
-                "Trade rejected: low quality"
             )
 
             return
@@ -146,9 +161,18 @@ class NeuroLLaCommander:
             prediction = signal[
                 "prediction"
             ]
-            confidence = signal[
-                "confidence"
-            ]
+
+            df = market_data[symbol]
+
+            quality_score = (
+                self.quality.score(df)
+            )
+
+            if quality_score < 60:
+                print(
+                    f"{symbol} rejected: low quality"
+                )
+                continue
 
             direction = None
 
@@ -170,6 +194,21 @@ class NeuroLLaCommander:
             if not aligned:
                 print(
                     f"{symbol} rejected: timeframe misalignment"
+                )
+                continue
+
+            # Use the model's own confidence (averaged across the
+            # confirming timeframes) for position sizing, journaling,
+            # and alerts - not a placeholder from the rule-based
+            # scanner, which has no real confidence signal of its own.
+            confidence = sum(
+                tf["confidence"] for tf in tf_data.values()
+            ) / len(tf_data)
+
+            if confidence < MIN_CONFIDENCE:
+                print(
+                    f"{symbol} rejected: confidence {confidence:.2f} "
+                    f"below minimum {MIN_CONFIDENCE}"
                 )
                 continue
 

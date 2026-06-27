@@ -130,6 +130,11 @@ class Trade(Base):
         default=0.0
     )
 
+    broker_position_id = Column(
+        String,
+        nullable=True
+    )
+
     pnl = Column(
         Float,
         default=0

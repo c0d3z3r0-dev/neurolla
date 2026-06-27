@@ -34,6 +34,9 @@ class TradeJournal:
             volume=signal_packet.get(
                 "volume",
                 0.0
+            ),
+            broker_position_id=signal_packet.get(
+                "broker_position_id"
             )
         )
 

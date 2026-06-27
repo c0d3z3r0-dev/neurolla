@@ -1,4 +1,6 @@
 from commander import NeuroLLaCommander
+from scheduler.bot_runner import fetch_watchlist_data
+from live.scanner import DEFAULT_WATCHLIST
 
 
 def main():
@@ -23,7 +25,13 @@ def main():
         credentials
     )
 
-    commander.cycle()
+    market_data = fetch_watchlist_data(broker, DEFAULT_WATCHLIST)
+
+    if not market_data:
+        print(f"No market data available for broker '{broker}'.")
+        return
+
+    commander.cycle(market_data)
     commander.audit()
     commander.adapt()
 

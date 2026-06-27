@@ -1,73 +1,29 @@
-import torch
-import torch.nn.functional as F
 import pandas as pd
 
-from networks.hybrid_model import NeuroLLaCore
 from core.features import build_features
-from core.evaluator import build_sequences
+from core.inference import ModelInference
+from core.config import MIN_CONFIDENCE
 
 
 def test_model():
     df = pd.read_csv(
         "data/raw/market.csv"
     )
+    df["time"] = pd.to_datetime(df["time"])
 
     df = build_features(df)
 
-    dummy_labels = [1] * len(df)
+    inference = ModelInference()
 
-    X, _ = build_sequences(
-        df,
-        dummy_labels
-    )
+    label_index, label_name, confidence = inference.predict(df)
 
-    latest = torch.tensor(
-        X[-1:],
-        dtype=torch.float32
-    )
-
-    model = NeuroLLaCore()
-
-    model.load_state_dict(
-        torch.load(
-            "models/trained/neurolla.pth"
-        )
-    )
-
-    model.eval()
-
-    with torch.no_grad():
-        logits = model(latest)
-
-        probs = F.softmax(
-            logits,
-            dim=1
-        )
-
-    prediction = torch.argmax(
-        probs,
-        dim=1
-    ).item()
-
-    confidence = torch.max(
-        probs
-    ).item()
-
-    print("Prediction:", prediction)
+    print("Prediction:", label_name)
     print("Confidence:", confidence)
 
-    if confidence < 0.68:
+    if confidence < MIN_CONFIDENCE:
         print("NO TRADE")
-
     else:
-        if prediction == 0:
-            print("SELL")
-
-        elif prediction == 1:
-            print("HOLD")
-
-        elif prediction == 2:
-            print("BUY")
+        print(label_name)
 
 
 if __name__ == "__main__":

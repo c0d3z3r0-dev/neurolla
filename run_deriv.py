@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 from execution.signal_engine import SignalEngine
@@ -8,6 +9,7 @@ def main():
     df = pd.read_csv(
         "data/raw/market.csv"
     )
+    df["time"] = pd.to_datetime(df["time"])
 
     engine = SignalEngine()
 
@@ -15,8 +17,14 @@ def main():
 
     print("Signal:", signal_packet)
 
+    api_token = os.environ.get("DERIV_API_TOKEN")
+
+    if not api_token:
+        print("DERIV_API_TOKEN environment variable is not set.")
+        return
+
     executor = DerivExecutor(
-        api_token="YOUR_DERIV_API_TOKEN"
+        api_token=api_token
     )
 
     executor.execute(

@@ -192,7 +192,8 @@ class NeuroLLaTrader:
                 "entry": price,
                 "sl": sl,
                 "tp": tp,
-                "volume": volume
+                "volume": volume,
+                "broker_position_id": str(getattr(result, "order", ""))
             }
         )
 
