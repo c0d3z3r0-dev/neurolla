@@ -327,3 +327,18 @@ class NeuroLLaCommander:
         )
 
         self.adaptive.run()
+
+    def shutdown(self):
+        """
+        Closes every DB session this commander holds open (journal,
+        analytics, position_monitor, risk_guard, and the analytics
+        session inside adaptive). Call this when a commander instance
+        is being discarded - e.g. mobile/api_gateway.py's per-user
+        cache eviction, or a clean process exit - so connections don't
+        leak for the remaining lifetime of the process.
+        """
+        self.journal.close()
+        self.analytics.close()
+        self.position_monitor.close()
+        self.risk_guard.close()
+        self.adaptive.analytics.close()

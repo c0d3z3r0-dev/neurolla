@@ -2,7 +2,6 @@ import time
 import traceback
 
 from commander import NeuroLLaCommander
-from core.risk_guard import RiskGuard
 from core.features import build_features
 from live.mt5_connector import MT5Connector
 from live.scanner import DEFAULT_WATCHLIST
@@ -47,6 +46,13 @@ def fetch_watchlist_data(broker, watchlist):
 
 
 def run_bot(broker, credentials, user_id=1, watchlist=None):
+    """
+    Long-running poll loop. The RiskGuard.can_trade() check lives
+    inside commander.cycle() itself - it isn't duplicated here, since
+    constructing a second RiskGuard for the same user_id every
+    iteration would mean two DB sessions running the identical daily
+    PnL/trade-count query for no benefit.
+    """
     watchlist = watchlist or DEFAULT_WATCHLIST
 
     commander = NeuroLLaCommander(
@@ -55,15 +61,8 @@ def run_bot(broker, credentials, user_id=1, watchlist=None):
         user_id=user_id
     )
 
-    guard = RiskGuard(user_id=user_id)
-
     try:
         while True:
-            if not guard.can_trade():
-                print("RiskGuard blocked trading.")
-                time.sleep(POLL_INTERVAL_SECONDS)
-                continue
-
             try:
                 market_data = fetch_watchlist_data(broker, watchlist)
 
@@ -80,4 +79,4 @@ def run_bot(broker, credentials, user_id=1, watchlist=None):
 
             time.sleep(POLL_INTERVAL_SECONDS)
     finally:
-        guard.close()
+        commander.shutdown()

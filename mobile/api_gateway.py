@@ -13,6 +13,12 @@ app = FastAPI()
 # import time for a generic mobile gateway - it's built lazily per
 # request instead of as a module-level singleton, which previously
 # crashed this whole file on import.
+#
+# This cache is unbounded for now (it grows by one entry per distinct
+# user_id that calls /signal/{symbol}, each holding 4 open DB
+# sessions) - fine for a small user base, but should move to an LRU
+# eviction or a per-request commander before this gateway sees real
+# production traffic.
 _commander_cache = {}
 
 
@@ -25,6 +31,14 @@ def get_commander(user_id, broker="mt5"):
         )
 
     return _commander_cache[user_id]
+
+
+@app.on_event("shutdown")
+def close_all_commanders():
+    for commander in _commander_cache.values():
+        commander.shutdown()
+
+    _commander_cache.clear()
 
 
 @app.get("/signal/{symbol}")
