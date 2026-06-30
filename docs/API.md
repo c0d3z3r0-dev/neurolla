@@ -1,137 +1,86 @@
 # API Documentation
 
-Base:
+Base URL (local development):
 
 ```text
 http://localhost:8000
 ```
 
+All endpoints except `/auth/google` require a session token. See
+`FRONTEND_AND_BROKER_INTEGRATION.md` for the full auth flow and request/response
+bodies. This page is a quick reference for routes only.
+
 ---
 
 # Auth
 
-POST:
+POST `/auth/google`
 
-```text
-/auth/google
-```
-
-Purpose:
-
-Google authentication.
+Exchanges a Google ID token for a NeuroLLa session token. No auth header
+required on this one endpoint.
 
 ---
 
 # Users
 
-POST:
+GET `/users/me`
 
-```text
-/users/create
-```
-
-GET:
-
-```text
-/users
-```
+Returns the authenticated caller's own user record. There is no endpoint
+that lists or creates users directly — accounts are created automatically
+on first successful `/auth/google` login.
 
 ---
 
 # Broker
 
-POST:
+POST `/broker/register`
 
-```text
-/broker/register
-```
-
-Registers broker credentials.
+Registers and encrypts a broker's credentials for the authenticated user.
 
 ---
 
 # Config
 
-POST:
+POST `/config/save`
 
-```text
-/config/save
-```
-
-Stores bot settings.
+Stores bot settings (capital, risk level, confidence threshold, auto-trade)
+for the authenticated user.
 
 ---
 
 # Bot Runtime
 
-POST:
+POST `/bot/start`
+POST `/bot/stop`
+GET `/bot/status`
 
-```text
-/bot/start
-```
-
-POST:
-
-```text
-/bot/stop
-```
-
-GET:
-
-```text
-/bot/status/{user_id}
-```
+All three act on the authenticated caller's own bot — there is no
+`user_id` path parameter; the user is identified by the session token.
 
 ---
 
 # Trades
 
-GET:
+GET `/trades`
+GET `/trades/open`
+GET `/trades/closed`
 
-```text
-/trades/{user_id}
-```
-
-GET:
-
-```text
-/trades/open/{user_id}
-```
-
-GET:
-
-```text
-/trades/closed/{user_id}
-```
+Return only the authenticated caller's own trades.
 
 ---
 
 # Analytics
 
-GET:
+GET `/analytics`
+GET `/analytics/equity`
 
-```text
-/analytics
-```
-
-GET:
-
-```text
-/analytics/equity
-```
+Return only the authenticated caller's own performance figures.
 
 ---
 
 # Risk
 
-POST:
+POST `/risk/save`
+POST `/risk/emergency-stop`
 
-```text
-/risk/save
-```
-
-POST:
-
-```text
-/risk/emergency-stop
-```
+`/risk/emergency-stop` halts only the authenticated caller's own bot.

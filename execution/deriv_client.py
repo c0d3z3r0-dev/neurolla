@@ -68,5 +68,44 @@ class DerivClient:
 
         return response
 
+    def get_candles(
+        self,
+        symbol,
+        granularity=300,
+        count=300
+    ):
+        """
+        Fetches recent OHLC candles via Deriv's ticks_history API.
+        granularity is in seconds (300 = 5 minutes, matching the M5
+        timeframe the model was trained on). Returns a list of dicts
+        with epoch/open/high/low/close - the caller is responsible for
+        turning this into the dataframe shape core.features.build_features
+        expects (time, open, high, low, close, tick_volume).
+        """
+        request = {
+            "ticks_history": symbol,
+            "adjust_start_time": 1,
+            "count": count,
+            "end": "latest",
+            "start": 1,
+            "style": "candles",
+            "granularity": granularity
+        }
+
+        self.ws.send(
+            json.dumps(request)
+        )
+
+        response = json.loads(
+            self.ws.recv()
+        )
+
+        if "error" in response:
+            raise RuntimeError(
+                f"Deriv candle fetch failed: {response['error']}"
+            )
+
+        return response.get("candles", [])
+
     def close(self):
         self.ws.close()
