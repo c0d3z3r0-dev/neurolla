@@ -36,10 +36,28 @@ reverse proxy with HTTPS — never expose port 8080 directly to the
 public internet, since the page itself has no login and anyone who
 reaches it can type in a Deriv token and trade with it.
 
+## What it looks like
+
+Restyled to the NeuroLLa Frontend Design System v1.0 (dark surfaces,
+`#F57C00` orange brand accent, Inter typography, 12px-radius cards
+with no shadows, status pills in green/red/orange/gray). Structured as
+three bottom-nav tabs, matching the design system's mobile pattern:
+
+- **Dashboard** — connection status, this session's trade count, and
+  the latest signal at a glance.
+- **Bots** — connect to Deriv, pick a symbol, get a signal, and place
+  the trade. This is the screen you'll use most.
+- **Trades** — a list of trades placed through this app, this session
+  only (cleared on disconnect or app restart).
+
+`mobile_app/theme.py` holds every color/spacing/typography value,
+translated 1:1 from the design system spec — if the design changes,
+that's the only file that should need editing.
+
 ## What it does
 
-1. **Connect** — paste a Deriv API token, tap Connect. This performs
-   a real `authorize` call against Deriv's API
+1. **Connect** — paste a Deriv API token on the Bots tab, tap Connect.
+   This performs a real `authorize` call against Deriv's API
    (`execution/deriv_executor.py` → `execution/deriv_client.py`) and
    shows a clear error if the token is invalid or unreachable.
 2. **Get signal** — fetches the last ~300 5-minute candles for the
@@ -51,7 +69,7 @@ reaches it can type in a Deriv token and trade with it.
 3. **Place trade** — only enabled when the last signal was BUY or SELL
    *and* confidence is at or above `core.config.MIN_CONFIDENCE` (68%
    by default). Sends the trade to Deriv as a CALL/PUT contract via
-   `DerivExecutor.execute()`.
+   `DerivExecutor.execute()`, and adds it to the Trades tab.
 
 ## Known limitation: trading volume
 
@@ -73,6 +91,7 @@ from real MT5 data.
   always-on trading rather than a manual "check and tap" tool, that's
   `scheduler/bot_runner.py` via the main API
   (see `docs/FRONTEND_AND_BROKER_INTEGRATION.md`), not this app.
-- Does not store trade history anywhere. Whatever Deriv's own app
-  shows is the source of truth for what actually happened to your
-  account.
+- Does not persist trade history anywhere - the Trades tab is an
+  in-memory list for this session only. Restarting the app or
+  disconnecting clears it. Whatever Deriv's own app shows is the
+  source of truth for what actually happened to your account.

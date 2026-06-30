@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime, timezone
 
 from core.config import (
     SEQUENCE_LENGTH,
@@ -19,10 +20,10 @@ DEFAULT_STAKE_BASE = 10.0  # USD, used as the base for risk-scaled stake sizing
 class DerivSession:
     """
     Holds one connected Deriv session's state: the API token, the
-    loaded model, the most recent prediction, and the live executor
-    (only created once the user explicitly authorizes a connection -
-    DerivExecutor.__init__ performs a real authorize() call against
-    Deriv, so it must never be constructed silently or speculatively).
+    loaded model, the most recent prediction, the live executor, and a
+    session-local log of trades placed through this app (only this
+    app and only this run - there is no database, so this is not a
+    substitute for Deriv's own statement/history).
 
     This is the model layer for the mobile_app UI - it has no NiceGUI
     imports, so it can be tested or reused independently of the UI.
@@ -38,6 +39,10 @@ class DerivSession:
         self.last_confidence = None
         self.last_signal_packet = None
         self.last_error = None
+
+        # Most-recent-first list of {symbol, signal, confidence, entry,
+        # sl, tp, result, placed_at} dicts - cleared on disconnect.
+        self.trade_log = []
 
     @property
     def is_connected(self):
@@ -72,6 +77,7 @@ class DerivSession:
         self.last_prediction = None
         self.last_confidence = None
         self.last_signal_packet = None
+        self.trade_log = []
 
     def get_signal(self, symbol=DEFAULT_SYMBOL):
         """
@@ -150,4 +156,12 @@ class DerivSession:
                 "No tradeable signal available. Get a fresh signal first."
             )
 
-        return self.executor.execute(self.last_signal_packet)
+        result = self.executor.execute(self.last_signal_packet)
+
+        self.trade_log.insert(0, {
+            **self.last_signal_packet,
+            "result": result,
+            "placed_at": datetime.now(timezone.utc)
+        })
+
+        return result
