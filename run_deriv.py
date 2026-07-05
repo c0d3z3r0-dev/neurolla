@@ -1,3 +1,7 @@
+﻿from core.db_init import init_db  # must be first - creates tables before any query
+
+# Initialise all DB tables before importing anything that opens a session
+init_db()
 import os
 import pandas as pd
 
@@ -34,3 +38,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

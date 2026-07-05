@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 from core.config import MIN_CONFIDENCE
 
@@ -113,14 +113,10 @@ class NeuroLLaCommander:
         self,
         market_data
     ):
-        print(
-            "=== NeuroLLa Commander ==="
-        )
+        logger.info("=== NeuroLLa Commander ===")
 
         if not self.news.is_safe():
-            print(
-                "News blackout active."
-            )
+            logger.info("News blackout active.")
 
             self.notifier.alert(
                 "News blackout active."
@@ -129,9 +125,7 @@ class NeuroLLaCommander:
             return
 
         if not self.risk_guard.can_trade():
-            print(
-                "RiskGuard blocked trading."
-            )
+            logger.info("RiskGuard blocked trading.")
 
             return
 
@@ -150,9 +144,7 @@ class NeuroLLaCommander:
         ranked = self.scanner.scan(market_data)
 
         if len(ranked) == 0:
-            print(
-                "No opportunities found."
-            )
+            logger.info("No opportunities found.")
 
             return
 
@@ -169,9 +161,7 @@ class NeuroLLaCommander:
             )
 
             if quality_score < 60:
-                print(
-                    f"{symbol} rejected: low quality"
-                )
+                logger.warning(f"{symbol} rejected: low quality")
                 continue
 
             direction = None
@@ -192,9 +182,7 @@ class NeuroLLaCommander:
             )
 
             if not aligned:
-                print(
-                    f"{symbol} rejected: timeframe misalignment"
-                )
+                logger.warning(f"{symbol} rejected: timeframe misalignment")
                 continue
 
             # Use the model's own confidence (averaged across the
@@ -221,9 +209,7 @@ class NeuroLLaCommander:
             )
 
             if not approved:
-                print(
-                    f"{symbol} rejected: portfolio conflict"
-                )
+                logger.warning(f"{symbol} rejected: portfolio conflict")
                 continue
 
             entry_price = df[
@@ -277,8 +263,7 @@ class NeuroLLaCommander:
                 f"Confidence={confidence}"
             )
 
-            print(
-                f"{symbol} executed:",
+            logger.info(f"{symbol} executed:",
                 result
             )
 
