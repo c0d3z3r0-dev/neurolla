@@ -113,10 +113,10 @@ class NeuroLLaCommander:
         self,
         market_data
     ):
-        logger.info("=== NeuroLLa Commander ===")
+        print("=== NeuroLLa Commander ===")
 
         if not self.news.is_safe():
-            logger.info("News blackout active.")
+            print("News blackout active.")
 
             self.notifier.alert(
                 "News blackout active."
@@ -125,7 +125,7 @@ class NeuroLLaCommander:
             return
 
         if not self.risk_guard.can_trade():
-            logger.info("RiskGuard blocked trading.")
+            print("RiskGuard blocked trading.")
 
             return
 
@@ -144,7 +144,7 @@ class NeuroLLaCommander:
         ranked = self.scanner.scan(market_data)
 
         if len(ranked) == 0:
-            logger.info("No opportunities found.")
+            print("No opportunities found.")
 
             return
 
@@ -161,7 +161,7 @@ class NeuroLLaCommander:
             )
 
             if quality_score < 60:
-                logger.warning(f"{symbol} rejected: low quality")
+                print(f"{symbol} rejected: low quality")
                 continue
 
             direction = None
@@ -182,7 +182,7 @@ class NeuroLLaCommander:
             )
 
             if not aligned:
-                logger.warning(f"{symbol} rejected: timeframe misalignment")
+                print(f"{symbol} rejected: timeframe misalignment")
                 continue
 
             # Use the model's own confidence (averaged across the
@@ -209,7 +209,7 @@ class NeuroLLaCommander:
             )
 
             if not approved:
-                logger.warning(f"{symbol} rejected: portfolio conflict")
+                print(f"{symbol} rejected: portfolio conflict")
                 continue
 
             entry_price = df[
@@ -263,7 +263,7 @@ class NeuroLLaCommander:
                 f"Confidence={confidence}"
             )
 
-            logger.info(f"{symbol} executed:",
+            print(f"{symbol} executed:",
                 result
             )
 

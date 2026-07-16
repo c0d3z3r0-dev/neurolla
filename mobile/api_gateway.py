@@ -28,7 +28,7 @@ def get_commander(user_id, broker="mt5"):
             broker=broker,
             credentials={},
             user_id=user_id
-        )
+        ) 
 
     return _commander_cache[user_id]
 
